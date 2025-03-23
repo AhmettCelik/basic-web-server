@@ -23,7 +23,15 @@ type apiConfig struct {
 }
 
 type interpreter struct {
-	Body string `json:"body"`
+	Body  string `json:"body"`
+	Email string `json:"email"`
+}
+
+type user struct {
+	Id        string `json:"id"`
+	CreatedAt string `json:"created_at"`
+	UpdatedAt string `json:"updated_at"`
+	Email     string `json:"email"`
 }
 
 func (cfg *apiConfig) middlewareMetricsInc(next http.Handler) http.Handler {
@@ -119,17 +127,24 @@ func validatePost(w http.ResponseWriter, req *http.Request) {
 
 func (cfg *apiConfig) createUserHandler(w http.ResponseWriter, req *http.Request) {
 	decoder := json.NewDecoder(req.Body)
-	email := interpreter{}
-	if err := decoder.Decode(&email); err != nil {
+	inter := interpreter{}
+	if err := decoder.Decode(&inter); err != nil {
 		respondWithError(w, http.StatusBadRequest, "Invalid request payload")
 	}
 
-	user, err := cfg.db.CreateUser(context.Background(), email.Body)
+	userDb, err := cfg.db.CreateUser(context.Background(), inter.Email)
 	if err != nil {
 		respondWithError(w, http.StatusBadRequest, "Invalid email")
 	}
 
-	respondWithJSON(w, 201, user)
+	userJson := user{
+		Id:        userDb.ID.String(),
+		CreatedAt: userDb.CreatedAt.String(),
+		UpdatedAt: userDb.UpdatedAt.String(),
+		Email:     userDb.Email,
+	}
+
+	respondWithJSON(w, 201, userJson)
 }
 
 func main() {
