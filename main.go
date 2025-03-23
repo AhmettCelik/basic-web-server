@@ -12,6 +12,7 @@ import (
 	"sync/atomic"
 
 	"github.com/AhmettCelik/web-server/internal/database"
+	"github.com/google/uuid"
 	"github.com/joho/godotenv"
 	_ "github.com/lib/pq"
 )
@@ -23,8 +24,9 @@ type apiConfig struct {
 }
 
 type interpreter struct {
-	Body  string `json:"body"`
-	Email string `json:"email"`
+	Body   string `json:"body"`
+	Email  string `json:"email"`
+	UserId string `json:"user_id"`
 }
 
 type user struct {
@@ -32,6 +34,14 @@ type user struct {
 	CreatedAt string `json:"created_at"`
 	UpdatedAt string `json:"updated_at"`
 	Email     string `json:"email"`
+}
+
+type chirp struct {
+	Id        string `json:"id"`
+	CreatedAt string `json:"created_at"`
+	UpdatedAt string `json:"updated_at"`
+	Body      string `json:"body"`
+	UserId    string `json:"user_id"`
 }
 
 func (cfg *apiConfig) middlewareMetricsInc(next http.Handler) http.Handler {
@@ -100,7 +110,7 @@ func breakingBadWords(text string) string {
 	return strings.Join(words, " ")
 }
 
-func validatePost(w http.ResponseWriter, req *http.Request) {
+func (cfg *apiConfig) validatePost(w http.ResponseWriter, req *http.Request) {
 	decoder := json.NewDecoder(req.Body)
 	post := interpreter{}
 	err := decoder.Decode(&post)
@@ -115,14 +125,33 @@ func validatePost(w http.ResponseWriter, req *http.Request) {
 	}
 
 	cleanedBody := breakingBadWords(post.Body)
-
-	response := struct {
-		CleanedBody string `json:"cleaned_body"`
-	}{
-		CleanedBody: cleanedBody,
+	userId, err := uuid.Parse(post.UserId)
+	if err != nil {
+		respondWithError(w, http.StatusBadRequest, "User id can not parsed to UUID")
+		return
 	}
 
-	respondWithJSON(w, http.StatusOK, response)
+	params := database.CreateChirpParams{
+		UserID: userId,
+		Body:   cleanedBody,
+	}
+
+	chirpDb, err := cfg.db.CreateChirp(context.Background(), params)
+	if err != nil {
+		respondWithError(w, http.StatusBadRequest, "Something went wrong see the log")
+		log.Fatalf("Error creating chirp: %v", err)
+		return
+	}
+
+	chirpJson := chirp{
+		Id:        chirpDb.ID.String(),
+		CreatedAt: chirpDb.CreatedAt.String(),
+		UpdatedAt: chirpDb.UpdatedAt.String(),
+		Body:      cleanedBody,
+		UserId:    userId.String(),
+	}
+
+	respondWithJSON(w, 201, chirpJson)
 }
 
 func (cfg *apiConfig) createUserHandler(w http.ResponseWriter, req *http.Request) {
@@ -170,7 +199,7 @@ func main() {
 	serveMuxplier.HandleFunc("GET /api/healthz", endpointHandler)
 	serveMuxplier.HandleFunc("GET /admin/metrics", apicfg.requestsCountHandler)
 	serveMuxplier.HandleFunc("POST /admin/reset", apicfg.resetHandler)
-	serveMuxplier.HandleFunc("POST /api/validate_chirp", validatePost)
 	serveMuxplier.HandleFunc("POST /api/users", apicfg.createUserHandler)
+	serveMuxplier.HandleFunc("POST /api/chirps", apicfg.validatePost)
 	server.ListenAndServe()
 }
