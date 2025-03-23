@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"database/sql"
 	"encoding/json"
 	"fmt"
@@ -18,9 +19,10 @@ import (
 type apiConfig struct {
 	fileserverHits atomic.Int32
 	db             *database.Queries
+	platform       string
 }
 
-type posts struct {
+type interpreter struct {
 	Body string `json:"body"`
 }
 
@@ -45,6 +47,16 @@ func (cfg *apiConfig) requestsCountHandler(w http.ResponseWriter, req *http.Requ
 
 func (cfg *apiConfig) resetHandler(w http.ResponseWriter, req *http.Request) {
 	cfg.fileserverHits.Swap(0)
+	cfg.platform = os.Getenv("PLATFORM")
+	if cfg.platform != "dev" {
+		respondWithError(w, http.StatusForbidden, "Can not use reset method on non-dev environment")
+		return
+	}
+
+	if err := cfg.db.DeleteUsers(context.Background()); err != nil {
+		log.Fatalf("Error deleting users: %v", err)
+		respondWithError(w, http.StatusBadRequest, "Error deleting users")
+	}
 }
 
 func endpointHandler(w http.ResponseWriter, req *http.Request) {
@@ -82,7 +94,7 @@ func breakingBadWords(text string) string {
 
 func validatePost(w http.ResponseWriter, req *http.Request) {
 	decoder := json.NewDecoder(req.Body)
-	post := posts{}
+	post := interpreter{}
 	err := decoder.Decode(&post)
 	if err != nil {
 		respondWithError(w, http.StatusBadRequest, "Invalid request payload")
@@ -105,6 +117,21 @@ func validatePost(w http.ResponseWriter, req *http.Request) {
 	respondWithJSON(w, http.StatusOK, response)
 }
 
+func (cfg *apiConfig) createUserHandler(w http.ResponseWriter, req *http.Request) {
+	decoder := json.NewDecoder(req.Body)
+	email := interpreter{}
+	if err := decoder.Decode(&email); err != nil {
+		respondWithError(w, http.StatusBadRequest, "Invalid request payload")
+	}
+
+	user, err := cfg.db.CreateUser(context.Background(), email.Body)
+	if err != nil {
+		respondWithError(w, http.StatusBadRequest, "Invalid email")
+	}
+
+	respondWithJSON(w, 201, user)
+}
+
 func main() {
 	godotenv.Load()
 	var apicfg apiConfig
@@ -113,7 +140,7 @@ func main() {
 	db, err := sql.Open("postgres", dbURL)
 	if err != nil {
 		log.Fatalf("Error sql.Open: %v", err)
-		os.Exit(1)
+		return
 	}
 
 	dbQueries := database.New(db)
@@ -129,5 +156,6 @@ func main() {
 	serveMuxplier.HandleFunc("GET /admin/metrics", apicfg.requestsCountHandler)
 	serveMuxplier.HandleFunc("POST /admin/reset", apicfg.resetHandler)
 	serveMuxplier.HandleFunc("POST /api/validate_chirp", validatePost)
+	serveMuxplier.HandleFunc("POST /api/users", apicfg.createUserHandler)
 	server.ListenAndServe()
 }
