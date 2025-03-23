@@ -1,15 +1,23 @@
 package main
 
 import (
+	"database/sql"
 	"encoding/json"
 	"fmt"
+	"log"
 	"net/http"
+	"os"
 	"strings"
 	"sync/atomic"
+
+	"github.com/AhmettCelik/web-server/internal/database"
+	"github.com/joho/godotenv"
+	_ "github.com/lib/pq"
 )
 
 type apiConfig struct {
 	fileserverHits atomic.Int32
+	db             *database.Queries
 }
 
 type posts struct {
@@ -98,7 +106,19 @@ func validatePost(w http.ResponseWriter, req *http.Request) {
 }
 
 func main() {
+	godotenv.Load()
 	var apicfg apiConfig
+
+	dbURL := os.Getenv("DB_URL")
+	db, err := sql.Open("postgres", dbURL)
+	if err != nil {
+		log.Fatalf("Error sql.Open: %v", err)
+		os.Exit(1)
+	}
+
+	dbQueries := database.New(db)
+	apicfg.db = dbQueries
+
 	serveMuxplier := http.NewServeMux()
 	server := http.Server{
 		Handler: serveMuxplier,
