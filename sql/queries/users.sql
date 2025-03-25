@@ -13,4 +13,4 @@ RETURNING *;
 TRUNCATE TABLE users CASCADE;
 
 -- name: GetUserPasswordByEmail :one
-SELECT hashed_password FROM users WHERE email=$1;
+SELECT * FROM users WHERE email=$1;

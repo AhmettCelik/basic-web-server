@@ -246,6 +246,29 @@ func (cfg *apiConfig) loginHandler(w http.ResponseWriter, req *http.Request) {
 	if err := decoder.Decode(&inter); err != nil {
 		respondWithError(w, http.StatusBadRequest, "Invalid request payload")
 	}
+
+	userDb, err := cfg.db.GetUserPasswordByEmail(context.Background(), inter.Email)
+	if err != nil {
+		respondWithError(w, http.StatusUnauthorized, "Invalid email")
+		log.Printf("Error getting password via email. Probably invalid email: %v", err)
+		return
+	}
+
+	err = auth.CheckPasswordHash(userDb.HashedPassword, inter.Password)
+	if err != nil {
+		respondWithError(w, http.StatusUnauthorized, "Invalid password")
+		log.Printf("Error checking password. Probably invalid password: %v", err)
+		return
+	}
+
+	userJson := user{
+		Id:        userDb.ID.String(),
+		CreatedAt: userDb.CreatedAt.String(),
+		UpdatedAt: userDb.UpdatedAt.String(),
+		Email:     userDb.Email,
+	}
+
+	respondWithJSON(w, http.StatusOK, userJson)
 }
 
 func main() {
