@@ -176,6 +176,54 @@ func (cfg *apiConfig) createUserHandler(w http.ResponseWriter, req *http.Request
 	respondWithJSON(w, 201, userJson)
 }
 
+func (cfg *apiConfig) getChirps(w http.ResponseWriter, req *http.Request) {
+	chirpsDb, err := cfg.db.GetChirps(context.Background())
+	if err != nil {
+		log.Fatalf("Error getting chirps: %v", err)
+		respondWithError(w, http.StatusBadRequest, "Error getting chirps")
+		return
+	}
+
+	var chirpsJson []chirp
+	for _, chirpDb := range chirpsDb {
+		chirpJson := chirp{
+			Id:        chirpDb.ID.String(),
+			CreatedAt: chirpDb.CreatedAt.String(),
+			UpdatedAt: chirpDb.UpdatedAt.String(),
+			Body:      chirpDb.Body,
+			UserId:    chirpDb.UserID.String(),
+		}
+		chirpsJson = append(chirpsJson, chirpJson)
+	}
+
+	respondWithJSON(w, http.StatusOK, chirpsJson)
+}
+
+func (cfg *apiConfig) getChirpById(w http.ResponseWriter, req *http.Request) {
+	chirpId, err := uuid.Parse(req.PathValue("chirpID"))
+	if err != nil {
+		log.Fatalf("Error parsing uuid string: %v", err)
+		respondWithError(w, http.StatusBadRequest, "Cant parse uuid string")
+		return
+	}
+
+	chirpDb, err := cfg.db.GetChirpById(context.Background(), chirpId)
+	if err != nil {
+		respondWithError(w, http.StatusBadRequest, "Invalid id")
+		return
+	}
+
+	chirpJson := chirp{
+		Id:        chirpDb.ID.String(),
+		CreatedAt: chirpDb.CreatedAt.String(),
+		UpdatedAt: chirpDb.UpdatedAt.String(),
+		Body:      chirpDb.Body,
+		UserId:    chirpDb.UserID.String(),
+	}
+
+	respondWithJSON(w, 200, chirpJson)
+}
+
 func main() {
 	godotenv.Load()
 	var apicfg apiConfig
@@ -201,5 +249,7 @@ func main() {
 	serveMuxplier.HandleFunc("POST /admin/reset", apicfg.resetHandler)
 	serveMuxplier.HandleFunc("POST /api/users", apicfg.createUserHandler)
 	serveMuxplier.HandleFunc("POST /api/chirps", apicfg.validatePost)
+	serveMuxplier.HandleFunc("GET /api/chirps", apicfg.getChirps)
+	serveMuxplier.HandleFunc("GET /api/chirps/{chirpID}", apicfg.getChirpById)
 	server.ListenAndServe()
 }
