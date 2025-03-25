@@ -11,6 +11,7 @@ import (
 	"strings"
 	"sync/atomic"
 
+	"github.com/AhmettCelik/web-server/internal/auth"
 	"github.com/AhmettCelik/web-server/internal/database"
 	"github.com/google/uuid"
 	"github.com/joho/godotenv"
@@ -24,9 +25,10 @@ type apiConfig struct {
 }
 
 type interpreter struct {
-	Body   string `json:"body"`
-	Email  string `json:"email"`
-	UserId string `json:"user_id"`
+	Body     string `json:"body"`
+	Email    string `json:"email"`
+	UserId   string `json:"user_id"`
+	Password string `json:"password"`
 }
 
 type user struct {
@@ -34,6 +36,7 @@ type user struct {
 	CreatedAt string `json:"created_at"`
 	UpdatedAt string `json:"updated_at"`
 	Email     string `json:"email"`
+	password  string
 }
 
 type chirp struct {
@@ -161,7 +164,20 @@ func (cfg *apiConfig) createUserHandler(w http.ResponseWriter, req *http.Request
 		respondWithError(w, http.StatusBadRequest, "Invalid request payload")
 	}
 
-	userDb, err := cfg.db.CreateUser(context.Background(), inter.Email)
+	password := inter.Password
+	hashedPassword, err := auth.HashPassword(password)
+	if err != nil {
+		log.Fatalf("Error hashing password: %v", err)
+		respondWithError(w, http.StatusBadRequest, "Password could not be hashed")
+		return
+	}
+
+	params := database.CreateUserParams{
+		Email:          inter.Email,
+		HashedPassword: hashedPassword,
+	}
+
+	userDb, err := cfg.db.CreateUser(context.Background(), params)
 	if err != nil {
 		respondWithError(w, http.StatusBadRequest, "Invalid email")
 	}
@@ -224,6 +240,14 @@ func (cfg *apiConfig) getChirpById(w http.ResponseWriter, req *http.Request) {
 	respondWithJSON(w, 200, chirpJson)
 }
 
+func (cfg *apiConfig) loginHandler(w http.ResponseWriter, req *http.Request) {
+	decoder := json.NewDecoder(req.Body)
+	inter := interpreter{}
+	if err := decoder.Decode(&inter); err != nil {
+		respondWithError(w, http.StatusBadRequest, "Invalid request payload")
+	}
+}
+
 func main() {
 	godotenv.Load()
 	var apicfg apiConfig
@@ -251,5 +275,6 @@ func main() {
 	serveMuxplier.HandleFunc("POST /api/chirps", apicfg.validatePost)
 	serveMuxplier.HandleFunc("GET /api/chirps", apicfg.getChirps)
 	serveMuxplier.HandleFunc("GET /api/chirps/{chirpID}", apicfg.getChirpById)
+	serveMuxplier.HandleFunc("POST /api/login", apicfg.loginHandler)
 	server.ListenAndServe()
 }
