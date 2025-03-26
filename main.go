@@ -10,6 +10,7 @@ import (
 	"os"
 	"strings"
 	"sync/atomic"
+	"time"
 
 	"github.com/AhmettCelik/web-server/internal/auth"
 	"github.com/AhmettCelik/web-server/internal/database"
@@ -22,13 +23,15 @@ type apiConfig struct {
 	fileserverHits atomic.Int32
 	db             *database.Queries
 	platform       string
+	tokenSecret    string
 }
 
 type interpreter struct {
-	Body     string `json:"body"`
-	Email    string `json:"email"`
-	UserId   string `json:"user_id"`
-	Password string `json:"password"`
+	Body             string `json:"body"`
+	Email            string `json:"email"`
+	UserId           string `json:"user_id"`
+	Password         string `json:"password"`
+	ExpiresInSeconds int    `json:"expires_in_seconds"`
 }
 
 type user struct {
@@ -37,6 +40,7 @@ type user struct {
 	UpdatedAt string `json:"updated_at"`
 	Email     string `json:"email"`
 	password  string
+	Token     string `json:"token"`
 }
 
 type chirp struct {
@@ -128,11 +132,21 @@ func (cfg *apiConfig) validatePost(w http.ResponseWriter, req *http.Request) {
 	}
 
 	cleanedBody := breakingBadWords(post.Body)
-	userId, err := uuid.Parse(post.UserId)
+
+	token, err := auth.GetBearerToken(req.Header)
 	if err != nil {
-		respondWithError(w, http.StatusBadRequest, "User id can not parsed to UUID")
+		respondWithError(w, http.StatusUnauthorized, "Bearer token error")
+		fmt.Printf("Error getting bearer token: %v", err)
 		return
 	}
+
+	userId, err := auth.ValidateJWT(token, cfg.tokenSecret)
+
+	//userId, err := uuid.Parse(post.UserId)
+	// if err != nil {
+	//		respondWithError(w, http.StatusBadRequest, "User id can not parsed to UUID")
+	//		return
+	//	}
 
 	params := database.CreateChirpParams{
 		UserID: userId,
@@ -247,6 +261,11 @@ func (cfg *apiConfig) loginHandler(w http.ResponseWriter, req *http.Request) {
 		respondWithError(w, http.StatusBadRequest, "Invalid request payload")
 	}
 
+	ExpiresIn := 3600
+	if inter.ExpiresInSeconds <= 0 && inter.ExpiresInSeconds > 3600 {
+		inter.ExpiresInSeconds = ExpiresIn
+	}
+
 	userDb, err := cfg.db.GetUserPasswordByEmail(context.Background(), inter.Email)
 	if err != nil {
 		respondWithError(w, http.StatusUnauthorized, "Invalid email")
@@ -261,11 +280,19 @@ func (cfg *apiConfig) loginHandler(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
+	token, err := auth.MakeJWT(userDb.ID, cfg.tokenSecret, time.Second*time.Duration(ExpiresIn))
+	if err != nil {
+		respondWithError(w, http.StatusUnauthorized, "Error creating token")
+		fmt.Printf("Error creating token: %v", err)
+		return
+	}
+
 	userJson := user{
 		Id:        userDb.ID.String(),
 		CreatedAt: userDb.CreatedAt.String(),
 		UpdatedAt: userDb.UpdatedAt.String(),
 		Email:     userDb.Email,
+		Token:     token,
 	}
 
 	respondWithJSON(w, http.StatusOK, userJson)
@@ -274,6 +301,8 @@ func (cfg *apiConfig) loginHandler(w http.ResponseWriter, req *http.Request) {
 func main() {
 	godotenv.Load()
 	var apicfg apiConfig
+
+	apicfg.tokenSecret = os.Getenv("TOKEN_SECRET")
 
 	dbURL := os.Getenv("DB_URL")
 	db, err := sql.Open("postgres", dbURL)
