@@ -9,3 +9,6 @@ VALUES (
     $6
 )
 RETURNING *;
+
+-- name: GetTokenByToken :one
+SELECT * FROM refresh_tokens WHERE token=$1;

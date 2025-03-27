@@ -289,6 +289,16 @@ func (cfg *apiConfig) loginHandler(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
+	refreshTokenParams := database.CreateRefreshTokenParams{
+		Token:     refreshToken,
+		CreatedAt: time.Now(),
+		UpdatedAt: time.Now(),
+		UserID:    userDb.ID,
+		ExpiresAt: time.Now().Add(time.Hour * 24 * 60),
+	}
+
+	cfg.db.CreateRefreshToken(context.Background(), refreshTokenParams)
+
 	userJson := user{
 		Id:           userDb.ID.String(),
 		CreatedAt:    userDb.CreatedAt.String(),
@@ -299,6 +309,16 @@ func (cfg *apiConfig) loginHandler(w http.ResponseWriter, req *http.Request) {
 	}
 
 	respondWithJSON(w, http.StatusOK, userJson)
+}
+
+func (cfg *apiConfig) refreshHandler(w http.ResponseWriter, req *http.Request) {
+	token, err := auth.GetBearerToken(req.Header)
+	if err != nil {
+		respondWithError(w, http.StatusBadRequest, "Error getting bearer token")
+		fmt.Printf("Error getting refresh token: %v", err)
+		return
+	}
+
 }
 
 func main() {
@@ -331,5 +351,6 @@ func main() {
 	serveMuxplier.HandleFunc("GET /api/chirps", apicfg.getChirps)
 	serveMuxplier.HandleFunc("GET /api/chirps/{chirpID}", apicfg.getChirpById)
 	serveMuxplier.HandleFunc("POST /api/login", apicfg.loginHandler)
+	serveMuxplier.HandleFunc("POST /api/refresh", apicfg.refreshHandler)
 	server.ListenAndServe()
 }
