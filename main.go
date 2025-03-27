@@ -35,12 +35,13 @@ type interpreter struct {
 }
 
 type user struct {
-	Id        string `json:"id"`
-	CreatedAt string `json:"created_at"`
-	UpdatedAt string `json:"updated_at"`
-	Email     string `json:"email"`
-	password  string
-	Token     string `json:"token"`
+	Id           string `json:"id"`
+	CreatedAt    string `json:"created_at"`
+	UpdatedAt    string `json:"updated_at"`
+	Email        string `json:"email"`
+	password     string
+	Token        string `json:"token"`
+	RefreshToken string `json:"refresh_token"`
 }
 
 type chirp struct {
@@ -141,12 +142,6 @@ func (cfg *apiConfig) validatePost(w http.ResponseWriter, req *http.Request) {
 	}
 
 	userId, err := auth.ValidateJWT(token, cfg.tokenSecret)
-
-	//userId, err := uuid.Parse(post.UserId)
-	// if err != nil {
-	//		respondWithError(w, http.StatusBadRequest, "User id can not parsed to UUID")
-	//		return
-	//	}
 
 	params := database.CreateChirpParams{
 		UserID: userId,
@@ -262,9 +257,9 @@ func (cfg *apiConfig) loginHandler(w http.ResponseWriter, req *http.Request) {
 	}
 
 	ExpiresIn := 3600
-	if inter.ExpiresInSeconds <= 0 && inter.ExpiresInSeconds > 3600 {
-		inter.ExpiresInSeconds = ExpiresIn
-	}
+	//if inter.ExpiresInSeconds <= 0 && inter.ExpiresInSeconds > 3600 {
+	//	inter.ExpiresInSeconds = ExpiresIn
+	//}
 
 	userDb, err := cfg.db.GetUserPasswordByEmail(context.Background(), inter.Email)
 	if err != nil {
@@ -287,12 +282,20 @@ func (cfg *apiConfig) loginHandler(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
+	refreshToken, err := auth.MakeRefreshToken()
+	if err != nil {
+		respondWithError(w, http.StatusBadRequest, "Error making refresh token")
+		fmt.Printf("An error occurred while making refresh token: %v", err)
+		return
+	}
+
 	userJson := user{
-		Id:        userDb.ID.String(),
-		CreatedAt: userDb.CreatedAt.String(),
-		UpdatedAt: userDb.UpdatedAt.String(),
-		Email:     userDb.Email,
-		Token:     token,
+		Id:           userDb.ID.String(),
+		CreatedAt:    userDb.CreatedAt.String(),
+		UpdatedAt:    userDb.UpdatedAt.String(),
+		Email:        userDb.Email,
+		Token:        token,
+		RefreshToken: refreshToken,
 	}
 
 	respondWithJSON(w, http.StatusOK, userJson)
