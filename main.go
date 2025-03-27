@@ -319,6 +319,25 @@ func (cfg *apiConfig) refreshHandler(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
+	refreshToken, err := cfg.db.GetTokenByToken(context.Background(), token)
+	if err != nil {
+		respondWithError(w, 401, "Token not exists")
+		fmt.Printf("Error the refresh token not exists on db: %v", err)
+		return
+	}
+
+	if refreshToken.ExpiresAt.Before(time.Now()) {
+		respondWithError(w, 401, "The token has expired")
+		return
+	}
+
+	res := struct {
+		Token string `json:"token"`
+	}{
+		Token: refreshToken.Token,
+	}
+
+	respondWithJSON(w, 201, res)
 }
 
 func main() {
