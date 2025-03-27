@@ -150,8 +150,8 @@ func (cfg *apiConfig) validatePost(w http.ResponseWriter, req *http.Request) {
 
 	chirpDb, err := cfg.db.CreateChirp(context.Background(), params)
 	if err != nil {
-		respondWithError(w, http.StatusBadRequest, "Something went wrong see the log")
-		log.Fatalf("Error creating chirp: %v", err)
+		respondWithError(w, 401, "Something went wrong see the log")
+		log.Printf("Error creating chirp: %v", err)
 		return
 	}
 
@@ -290,6 +290,10 @@ func (cfg *apiConfig) loginHandler(w http.ResponseWriter, req *http.Request) {
 		UpdatedAt: time.Now(),
 		UserID:    userDb.ID,
 		ExpiresAt: time.Now().Add(time.Hour * 24 * 60),
+		RevokedAt: sql.NullTime{
+			Time:  time.Time{},
+			Valid: false,
+		},
 	}
 
 	cfg.db.CreateRefreshToken(context.Background(), refreshTokenParams)
@@ -326,6 +330,11 @@ func (cfg *apiConfig) refreshHandler(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
+	if refreshToken.RevokedAt.Valid {
+		respondWithError(w, 401, "This token has revoked")
+		return
+	}
+
 	userDb, err := cfg.db.GetUserByRefreshToken(context.Background(), refreshToken.Token)
 	if err != nil {
 		respondWithError(w, 401, "The user with this token does not exists on db")
@@ -335,7 +344,7 @@ func (cfg *apiConfig) refreshHandler(w http.ResponseWriter, req *http.Request) {
 
 	newToken, err := auth.MakeJWT(userDb.ID, cfg.tokenSecret, time.Hour)
 	if err != nil {
-		respondWithError(w, http.StatusUnauthorized, "Error creating token")
+		respondWithError(w, 401, "Error creating token")
 		fmt.Printf("Error creating token: %v", err)
 		return
 	}
@@ -346,7 +355,7 @@ func (cfg *apiConfig) refreshHandler(w http.ResponseWriter, req *http.Request) {
 		Token: newToken,
 	}
 
-	respondWithJSON(w, 201, res)
+	respondWithJSON(w, 200, res)
 }
 
 func (cfg *apiConfig) revokeHandler(w http.ResponseWriter, req *http.Request) {
@@ -357,7 +366,16 @@ func (cfg *apiConfig) revokeHandler(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
-	cfg.db.RevokeRefreshToken(context.Background(), token)
+	params := database.RevokeRefreshTokenParams{
+		Token: token,
+		RevokedAt: sql.NullTime{
+			Time:  time.Now(),
+			Valid: true,
+		},
+		UpdatedAt: time.Now(),
+	}
+
+	cfg.db.RevokeRefreshToken(context.Background(), params)
 	respondWithJSON(w, http.StatusNoContent, nil)
 }
 
