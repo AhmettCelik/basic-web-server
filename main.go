@@ -256,11 +256,6 @@ func (cfg *apiConfig) loginHandler(w http.ResponseWriter, req *http.Request) {
 		respondWithError(w, http.StatusBadRequest, "Invalid request payload")
 	}
 
-	ExpiresIn := 3600
-	//if inter.ExpiresInSeconds <= 0 && inter.ExpiresInSeconds > 3600 {
-	//	inter.ExpiresInSeconds = ExpiresIn
-	//}
-
 	userDb, err := cfg.db.GetUserPasswordByEmail(context.Background(), inter.Email)
 	if err != nil {
 		respondWithError(w, http.StatusUnauthorized, "Invalid email")
@@ -275,7 +270,7 @@ func (cfg *apiConfig) loginHandler(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
-	token, err := auth.MakeJWT(userDb.ID, cfg.tokenSecret, time.Second*time.Duration(ExpiresIn))
+	token, err := auth.MakeJWT(userDb.ID, cfg.tokenSecret, time.Hour)
 	if err != nil {
 		respondWithError(w, http.StatusUnauthorized, "Error creating token")
 		fmt.Printf("Error creating token: %v", err)
@@ -331,13 +326,39 @@ func (cfg *apiConfig) refreshHandler(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
+	userDb, err := cfg.db.GetUserByRefreshToken(context.Background(), refreshToken.Token)
+	if err != nil {
+		respondWithError(w, 401, "The user with this token does not exists on db")
+		fmt.Printf("Error getting user from refresh token: %v", err)
+		return
+	}
+
+	newToken, err := auth.MakeJWT(userDb.ID, cfg.tokenSecret, time.Hour)
+	if err != nil {
+		respondWithError(w, http.StatusUnauthorized, "Error creating token")
+		fmt.Printf("Error creating token: %v", err)
+		return
+	}
+
 	res := struct {
 		Token string `json:"token"`
 	}{
-		Token: refreshToken.Token,
+		Token: newToken,
 	}
 
 	respondWithJSON(w, 201, res)
+}
+
+func (cfg *apiConfig) revokeHandler(w http.ResponseWriter, req *http.Request) {
+	token, err := auth.GetBearerToken(req.Header)
+	if err != nil {
+		respondWithError(w, http.StatusBadRequest, "Error getting bearer token")
+		fmt.Printf("Error getting refresh token: %v", err)
+		return
+	}
+
+	cfg.db.RevokeRefreshToken(context.Background(), token)
+	respondWithJSON(w, http.StatusNoContent, nil)
 }
 
 func main() {
@@ -371,5 +392,6 @@ func main() {
 	serveMuxplier.HandleFunc("GET /api/chirps/{chirpID}", apicfg.getChirpById)
 	serveMuxplier.HandleFunc("POST /api/login", apicfg.loginHandler)
 	serveMuxplier.HandleFunc("POST /api/refresh", apicfg.refreshHandler)
+	serveMuxplier.HandleFunc("POST /api/revoke", apicfg.revokeHandler)
 	server.ListenAndServe()
 }
