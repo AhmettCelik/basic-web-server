@@ -379,6 +379,31 @@ func (cfg *apiConfig) revokeHandler(w http.ResponseWriter, req *http.Request) {
 	respondWithJSON(w, http.StatusNoContent, nil)
 }
 
+func (cfg *apiConfig) changePassword(w http.ResponseWriter, req *http.Request) {
+	decoder := json.NewDecoder(req.Body)
+	inter := interpreter{}
+	if err := decoder.Decode(&inter); err != nil {
+		respondWithError(w, http.StatusBadRequest, "Invalid request payload")
+		log.Printf("Error decoding data: %v", err)
+		return
+	}
+
+	token, err := auth.GetBearerToken(req.Header)
+	if err != nil {
+		respondWithError(w, http.StatusUnauthorized, "Somethings went wrong maybe token could be invalid...")
+		fmt.Printf("Error getting bearer token: %v", err)
+		return
+	}
+
+	inter.Password, err = auth.HashPassword(inter.Password)
+	if err != nil {
+		respondWithError(w, http.StatusBadRequest, "Somethings went wrong hashing password...")
+		log.Printf("Error hashing password: %v", err)
+		return
+	}
+
+}
+
 func main() {
 	godotenv.Load()
 	var apicfg apiConfig
@@ -411,5 +436,6 @@ func main() {
 	serveMuxplier.HandleFunc("POST /api/login", apicfg.loginHandler)
 	serveMuxplier.HandleFunc("POST /api/refresh", apicfg.refreshHandler)
 	serveMuxplier.HandleFunc("POST /api/revoke", apicfg.revokeHandler)
+	serveMuxplier.HandleFunc("PUT /api/users", apicfg.changePassword)
 	server.ListenAndServe()
 }

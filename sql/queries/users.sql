@@ -20,3 +20,9 @@ SELECT u.*
 FROM users u
 JOIN refresh_tokens r ON u.id = r.user_id
 WHERE r.token = $1;
+
+-- name: ChangeUserPassword :exec
+UPDATE users SET hashed_password = $1 WHERE email = $2;
+
+-- name: ChangeUserEmail :exec
+UPDATE users SET email = $1 WHERE email = $2;

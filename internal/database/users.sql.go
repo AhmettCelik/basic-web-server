@@ -9,6 +9,34 @@ import (
 	"context"
 )
 
+const changeUserEmail = `-- name: ChangeUserEmail :exec
+UPDATE users SET email = $1 WHERE email = $2
+`
+
+type ChangeUserEmailParams struct {
+	Email   string
+	Email_2 string
+}
+
+func (q *Queries) ChangeUserEmail(ctx context.Context, arg ChangeUserEmailParams) error {
+	_, err := q.db.ExecContext(ctx, changeUserEmail, arg.Email, arg.Email_2)
+	return err
+}
+
+const changeUserPassword = `-- name: ChangeUserPassword :exec
+UPDATE users SET hashed_password = $1 WHERE email = $2
+`
+
+type ChangeUserPasswordParams struct {
+	HashedPassword string
+	Email          string
+}
+
+func (q *Queries) ChangeUserPassword(ctx context.Context, arg ChangeUserPasswordParams) error {
+	_, err := q.db.ExecContext(ctx, changeUserPassword, arg.HashedPassword, arg.Email)
+	return err
+}
+
 const createUser = `-- name: CreateUser :one
 INSERT INTO users (id, created_at, updated_at, email, hashed_password)
 VALUES (
