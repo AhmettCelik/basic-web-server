@@ -395,12 +395,26 @@ func (cfg *apiConfig) changePassword(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
-	inter.Password, err = auth.HashPassword(inter.Password)
+	_, err = auth.ValidateJWT(token, cfg.tokenSecret)
+	if err != nil {
+		respondWithError(w, http.StatusUnauthorized, "Somethings went wrong at token validation...")
+		log.Printf("Error validating access token: %v", err)
+		return
+	}
+
+	newHashedPassword, err := auth.HashPassword(inter.Password)
 	if err != nil {
 		respondWithError(w, http.StatusBadRequest, "Somethings went wrong hashing password...")
 		log.Printf("Error hashing password: %v", err)
 		return
 	}
+
+	params := database.ChangeUserPasswordParams{
+		HashedPassword: newHashedPassword,
+		Email:          inter.Email,
+	}
+
+	cfg.db.ChangeUserPassword(context.Background(), params)
 
 }
 
