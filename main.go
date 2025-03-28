@@ -391,7 +391,7 @@ func (cfg *apiConfig) changePassword(w http.ResponseWriter, req *http.Request) {
 	token, err := auth.GetBearerToken(req.Header)
 	if err != nil {
 		respondWithError(w, http.StatusUnauthorized, "Somethings went wrong maybe token could be invalid...")
-		fmt.Printf("Error getting bearer token: %v", err)
+		log.Printf("Error getting bearer token: %v", err)
 		return
 	}
 
@@ -416,6 +416,13 @@ func (cfg *apiConfig) changePassword(w http.ResponseWriter, req *http.Request) {
 
 	cfg.db.ChangeUserPassword(context.Background(), params)
 
+	res := struct {
+		Email string `json:"email"`
+	}{
+		Email: inter.Email,
+	}
+
+	respondWithJSON(w, http.StatusOK, res)
 }
 
 func main() {
