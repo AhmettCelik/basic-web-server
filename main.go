@@ -234,7 +234,7 @@ func (cfg *apiConfig) getChirpById(w http.ResponseWriter, req *http.Request) {
 
 	chirpDb, err := cfg.db.GetChirpById(context.Background(), chirpId)
 	if err != nil {
-		respondWithError(w, http.StatusBadRequest, "Invalid id")
+		respondWithError(w, http.StatusNotFound, "Invalid id")
 		return
 	}
 
@@ -425,6 +425,56 @@ func (cfg *apiConfig) changePassword(w http.ResponseWriter, req *http.Request) {
 	respondWithJSON(w, http.StatusOK, res)
 }
 
+func (cfg *apiConfig) deleteChirp(w http.ResponseWriter, req *http.Request) {
+	token, err := auth.GetBearerToken(req.Header)
+	if err != nil {
+		respondWithError(w, http.StatusUnauthorized, "Somethings went wrong maybe token could be invalid...")
+		log.Printf("Error getting bearer token: %v", err)
+		return
+	}
+
+	userUniqueId, err := auth.ValidateJWT(token, cfg.tokenSecret)
+	if err != nil {
+		respondWithError(w, http.StatusUnauthorized, "Somethings went wrong at token validation...")
+		log.Printf("Error validating access token: %v", err)
+		return
+	}
+
+	chirpId, err := uuid.Parse(req.PathValue("chirpID"))
+	if err != nil {
+		log.Fatalf("Error parsing uuid string: %v", err)
+		respondWithError(w, http.StatusBadRequest, "Cant parse uuid string")
+		return
+	}
+
+	chirp, err := cfg.db.GetChirpById(context.Background(), chirpId)
+	if err != nil {
+		respondWithError(w, http.StatusNotFound, "Chirp not found")
+		log.Printf("Error getting chirp by id: %v", err)
+		return
+	}
+
+	if chirp.UserID != userUniqueId {
+		respondWithError(w, http.StatusForbidden, "Permission denied")
+		log.Printf("Insufficient permission")
+		return
+	}
+
+	deleteChirpByIdParams := database.DeleteChirpByIdParams{
+		UserID: userUniqueId,
+		ID:     chirpId,
+	}
+
+	err = cfg.db.DeleteChirpById(context.Background(), deleteChirpByIdParams)
+	if err != nil {
+		respondWithError(w, http.StatusBadRequest, "Somethings went wrong deleting chirp")
+		log.Printf("Error deleting chirp by id: %v", err)
+		return
+	}
+
+	respondWithJSON(w, http.StatusNoContent, nil)
+}
+
 func main() {
 	godotenv.Load()
 	var apicfg apiConfig
@@ -458,5 +508,6 @@ func main() {
 	serveMuxplier.HandleFunc("POST /api/refresh", apicfg.refreshHandler)
 	serveMuxplier.HandleFunc("POST /api/revoke", apicfg.revokeHandler)
 	serveMuxplier.HandleFunc("PUT /api/users", apicfg.changePassword)
+	serveMuxplier.HandleFunc("DELETE /api/chirps/{chirpID}", apicfg.deleteChirp)
 	server.ListenAndServe()
 }
