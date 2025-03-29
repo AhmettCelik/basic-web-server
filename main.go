@@ -209,11 +209,31 @@ func (cfg *apiConfig) createUserHandler(w http.ResponseWriter, req *http.Request
 }
 
 func (cfg *apiConfig) getChirps(w http.ResponseWriter, req *http.Request) {
-	chirpsDb, err := cfg.db.GetChirps(context.Background())
-	if err != nil {
-		log.Fatalf("Error getting chirps: %v", err)
-		respondWithError(w, http.StatusBadRequest, "Error getting chirps")
-		return
+	authorID := req.URL.Query().Get("author_id")
+	var chirpsDb []database.Chirp
+	var err error
+
+	if authorID == "" {
+		chirpsDb, err = cfg.db.GetChirps(context.Background())
+		if err != nil {
+			log.Fatalf("Error getting chirps: %v", err)
+			respondWithError(w, http.StatusBadRequest, "Error getting chirps")
+			return
+		}
+	} else {
+		authorUniqueID, err := uuid.Parse(authorID)
+		if err != nil {
+			respondWithError(w, http.StatusBadRequest, "Cant parse uuid string")
+			log.Printf("Error parsing uuid string: %v", err)
+			return
+		}
+
+		chirpsDb, err = cfg.db.GetChirpsForUserID(context.Background(), authorUniqueID)
+		if err != nil {
+			log.Fatalf("Error getting chirps: %v", err)
+			respondWithError(w, http.StatusBadRequest, "Error getting chirps")
+			return
+		}
 	}
 
 	var chirpsJson []chirp
