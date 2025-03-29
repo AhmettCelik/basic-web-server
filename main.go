@@ -24,6 +24,7 @@ type apiConfig struct {
 	db             *database.Queries
 	platform       string
 	tokenSecret    string
+	polkaApiKey    string
 }
 
 type interpreter struct {
@@ -482,7 +483,19 @@ func (cfg *apiConfig) deleteChirp(w http.ResponseWriter, req *http.Request) {
 	respondWithJSON(w, http.StatusNoContent, nil)
 }
 
-func (cfg *apiConfig) upgradePremium(w http.ResponseWriter, req *http.Request) {
+func (cfg *apiConfig) webhooks(w http.ResponseWriter, req *http.Request) {
+	apiKey, err := auth.GetAPIKey(req.Header)
+	if err != nil {
+		respondWithError(w, http.StatusUnauthorized, "Something wrong about webhook api key")
+		fmt.Printf("Error getting webhook api key: %v", err)
+		return
+	}
+
+	if apiKey != cfg.polkaApiKey {
+		respondWithError(w, http.StatusUnauthorized, "Invalid api key")
+		return
+	}
+
 	decoder := json.NewDecoder(req.Body)
 	inter := interpreter{}
 	if err := decoder.Decode(&inter); err != nil {
@@ -518,6 +531,7 @@ func main() {
 	var apicfg apiConfig
 
 	apicfg.tokenSecret = os.Getenv("TOKEN_SECRET")
+	apicfg.polkaApiKey = os.Getenv("POLKA_KEY")
 
 	dbURL := os.Getenv("DB_URL")
 	db, err := sql.Open("postgres", dbURL)
@@ -547,6 +561,6 @@ func main() {
 	serveMuxplier.HandleFunc("POST /api/revoke", apicfg.revokeHandler)
 	serveMuxplier.HandleFunc("PUT /api/users", apicfg.changePassword)
 	serveMuxplier.HandleFunc("DELETE /api/chirps/{chirpID}", apicfg.deleteChirp)
-	serveMuxplier.HandleFunc("POST /api/polka/webhooks", apicfg.upgradePremium)
+	serveMuxplier.HandleFunc("POST /api/polka/webhooks", apicfg.webhooks)
 	server.ListenAndServe()
 }
