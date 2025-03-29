@@ -8,6 +8,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"sort"
 	"strings"
 	"sync/atomic"
 	"time"
@@ -210,6 +211,7 @@ func (cfg *apiConfig) createUserHandler(w http.ResponseWriter, req *http.Request
 
 func (cfg *apiConfig) getChirps(w http.ResponseWriter, req *http.Request) {
 	authorID := req.URL.Query().Get("author_id")
+	sortType := req.URL.Query().Get("sort")
 	var chirpsDb []database.Chirp
 	var err error
 
@@ -234,6 +236,12 @@ func (cfg *apiConfig) getChirps(w http.ResponseWriter, req *http.Request) {
 			respondWithError(w, http.StatusBadRequest, "Error getting chirps")
 			return
 		}
+	}
+
+	if sortType == "desc" {
+		sort.Slice(chirpsDb, func(i, j int) bool {
+			return chirpsDb[i].CreatedAt.After(chirpsDb[j].CreatedAt)
+		})
 	}
 
 	var chirpsJson []chirp
