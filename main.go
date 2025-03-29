@@ -32,6 +32,10 @@ type interpreter struct {
 	UserId           string `json:"user_id"`
 	Password         string `json:"password"`
 	ExpiresInSeconds int    `json:"expires_in_seconds"`
+	Event            string `json:"event"`
+	Data             struct {
+		UserID string `json:"user_id"`
+	} `json:"data"`
 }
 
 type user struct {
@@ -42,6 +46,7 @@ type user struct {
 	password     string
 	Token        string `json:"token"`
 	RefreshToken string `json:"refresh_token"`
+	IsChirpyRed  bool   `json:"is_chirpy_red"`
 }
 
 type chirp struct {
@@ -192,10 +197,11 @@ func (cfg *apiConfig) createUserHandler(w http.ResponseWriter, req *http.Request
 	}
 
 	userJson := user{
-		Id:        userDb.ID.String(),
-		CreatedAt: userDb.CreatedAt.String(),
-		UpdatedAt: userDb.UpdatedAt.String(),
-		Email:     userDb.Email,
+		Id:          userDb.ID.String(),
+		CreatedAt:   userDb.CreatedAt.String(),
+		UpdatedAt:   userDb.UpdatedAt.String(),
+		Email:       userDb.Email,
+		IsChirpyRed: userDb.IsChirpyRed.Bool,
 	}
 
 	respondWithJSON(w, 201, userJson)
@@ -227,7 +233,7 @@ func (cfg *apiConfig) getChirps(w http.ResponseWriter, req *http.Request) {
 func (cfg *apiConfig) getChirpById(w http.ResponseWriter, req *http.Request) {
 	chirpId, err := uuid.Parse(req.PathValue("chirpID"))
 	if err != nil {
-		log.Fatalf("Error parsing uuid string: %v", err)
+		log.Printf("Error parsing uuid string: %v", err)
 		respondWithError(w, http.StatusBadRequest, "Cant parse uuid string")
 		return
 	}
@@ -305,6 +311,7 @@ func (cfg *apiConfig) loginHandler(w http.ResponseWriter, req *http.Request) {
 		Email:        userDb.Email,
 		Token:        token,
 		RefreshToken: refreshToken,
+		IsChirpyRed:  userDb.IsChirpyRed.Bool,
 	}
 
 	respondWithJSON(w, http.StatusOK, userJson)
@@ -442,7 +449,7 @@ func (cfg *apiConfig) deleteChirp(w http.ResponseWriter, req *http.Request) {
 
 	chirpId, err := uuid.Parse(req.PathValue("chirpID"))
 	if err != nil {
-		log.Fatalf("Error parsing uuid string: %v", err)
+		log.Printf("Error parsing uuid string: %v", err)
 		respondWithError(w, http.StatusBadRequest, "Cant parse uuid string")
 		return
 	}
@@ -469,6 +476,37 @@ func (cfg *apiConfig) deleteChirp(w http.ResponseWriter, req *http.Request) {
 	if err != nil {
 		respondWithError(w, http.StatusBadRequest, "Somethings went wrong deleting chirp")
 		log.Printf("Error deleting chirp by id: %v", err)
+		return
+	}
+
+	respondWithJSON(w, http.StatusNoContent, nil)
+}
+
+func (cfg *apiConfig) upgradePremium(w http.ResponseWriter, req *http.Request) {
+	decoder := json.NewDecoder(req.Body)
+	inter := interpreter{}
+	if err := decoder.Decode(&inter); err != nil {
+		respondWithError(w, http.StatusBadRequest, "Something went wrong while decoding")
+		fmt.Printf("Error decoding req.Body: %v", err)
+		return
+	}
+
+	if inter.Event != "user.upgraded" {
+		respondWithJSON(w, http.StatusNoContent, nil)
+		return
+	}
+
+	userUnıqueID, err := uuid.Parse(inter.Data.UserID)
+	if err != nil {
+		respondWithError(w, http.StatusBadRequest, "Cant parse uuid string")
+		log.Printf("Error parsing uuid string: %v", err)
+		return
+	}
+
+	err = cfg.db.UpdateChirpyRed(context.Background(), userUnıqueID)
+	if err != nil {
+		respondWithError(w, http.StatusNotFound, "Somethings went wrong.. Maybe UUID is invalid?")
+		fmt.Printf("Error updating is_chirpy_red field on db: %v", err)
 		return
 	}
 
@@ -509,5 +547,6 @@ func main() {
 	serveMuxplier.HandleFunc("POST /api/revoke", apicfg.revokeHandler)
 	serveMuxplier.HandleFunc("PUT /api/users", apicfg.changePassword)
 	serveMuxplier.HandleFunc("DELETE /api/chirps/{chirpID}", apicfg.deleteChirp)
+	serveMuxplier.HandleFunc("POST /api/polka/webhooks", apicfg.upgradePremium)
 	server.ListenAndServe()
 }
